@@ -58,7 +58,7 @@ def _launch_node(context: LaunchContext):
                     config_file,
                     {
                         'gige/mtu_size': mtu_size,
-                        'startup_user_set': startup_user_set,
+                       # 'startup_user_set': startup_user_set,
                         'enable_status_publisher': enable_status_publisher,
                         'enable_current_params_publisher': enable_current_params_publisher
                     }
@@ -71,7 +71,7 @@ def generate_launch_description():
     default_config_file = os.path.join(
         get_package_share_directory('pylon_ros2_camera_wrapper'),
         'config',
-        'default.yaml'
+        'cam_config_feb_11.yaml'
     )
 
     # launch arguments
@@ -83,7 +83,7 @@ def generate_launch_description():
 
     declare_camera_id_cmd = DeclareLaunchArgument(
         'camera_id',
-        default_value='my_camera',
+        default_value='basler_cam',
         description='Id of the camera. Used as node namespace.'
     )
 
@@ -102,7 +102,7 @@ def generate_launch_description():
     declare_startup_user_set_cmd = DeclareLaunchArgument(
         'startup_user_set',
         # possible value: Default, UserSet1, UserSet2, UserSet3, CurrentSetting
-        default_value='CurrentSetting',
+        default_value='',
         description='Specific user set defining user parameters to run the camera.'
     )
 
