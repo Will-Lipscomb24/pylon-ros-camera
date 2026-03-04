@@ -1,0 +1,8 @@
+image_saver_node:
+  ros__parameters:
+    image_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
+    save_directory: "/tmp/captured_images"
+    save_rate_hz: .2
+    image_prefix: "frame"
+    timestamp_source: "header"   # 'header', 'wall', or 'both'
+    skip_duplicates: true
