@@ -163,7 +163,11 @@ void PylonROS2CameraNode::initPublishers()
   this->component_status_pub_ = this->create_publisher<pylon_ros2_camera_interfaces::msg::ComponentStatus>(msg_name, 5);
 
   msg_name = msg_prefix + "image_raw";
-  this->img_raw_pub_ = image_transport::create_camera_publisher(this, msg_name);
+  this->img_raw_pub_ = image_transport::create_camera_publisher(
+  	this, 
+  	msg_name,
+  	rclcpp::QoS(rclcpp::SensorDataQoS()).get_rmw_qos_profile()
+  );
 
   // blaze related topics
   msg_name = msg_prefix + "blaze_cloud"; this->blaze_cloud_topic_name_ = msg_name;
