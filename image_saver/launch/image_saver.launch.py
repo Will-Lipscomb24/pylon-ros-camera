@@ -50,15 +50,15 @@ def generate_launch_description():
     )
 
     # --- Include the existing pylon camera launch file ---
-    pylon_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory('pylon_ros2_camera_wrapper'),
-                'launch',
-                'pylon_ros2_camera.launch.py'
-            )
-        )
-    )
+#    pylon_launch = IncludeLaunchDescription(
+#        PythonLaunchDescriptionSource(
+#            os.path.join(
+#                get_package_share_directory('pylon_ros2_camera_wrapper'),
+#                'launch',
+#                'pylon_ros2_camera.launch.py'
+#            )
+#        )
+#    )
 
     # --- Image Saver Node --
     image_saver_node = Node(
@@ -78,7 +78,7 @@ def generate_launch_description():
     ld.add_action(declare_timestamp_source_cmd)
     ld.add_action(declare_skip_duplicates_cmd)
 
-    ld.add_action(pylon_launch)
+   # ld.add_action(pylon_launch)
     ld.add_action(image_saver_node)
 
     return ld
