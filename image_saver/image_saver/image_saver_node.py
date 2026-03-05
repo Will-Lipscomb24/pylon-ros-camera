@@ -53,13 +53,19 @@ class ImageSaverNode(Node):
             self.image_callback,
             10
         )
+        
+        qos = QoSProfile(
+	    history=HistoryPolicy.KEEP_LAST,
+	    depth=1,
+	    reliability=ReliabilityPolicy.RELIABLE,
+	    durability=DurabilityPolicy.TRANSIENT_LOCAL
+	)
         self.subscription_brokerage = self.create_subscription(
-            Image,
+            TheoCode,
             self.broker_topic,
             self.broker_callback,
-            10 # change
+            qos
         )
-        self.capture_active = False
 
         # --- Save timer ---
         save_period = 1.0 / self.save_rate_hz
@@ -74,14 +80,7 @@ class ImageSaverNode(Node):
             f"  Skip dupes : {self.skip_duplicates}"
         )
 
-    def trigger_callback(self, msg: String):                  
-    """Unlock saving when the trigger message arrives."""  
-    if not self.capture_active:                          
-        self.get_logger().info(                          
-            f"Trigger received: '{msg.data}' — image saving ACTIVE"  
-        )                                                
-        self.capture_active = True                       
-
+   
     # ------------------------------------------------------------------
     def image_callback(self, msg: Image):
         self.latest_msg = msg
