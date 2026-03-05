@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+from theo_msgs.msg import TheoCode
 
 import cv2
 import os
@@ -22,13 +23,19 @@ class ImageSaverNode(Node):
         # 'header' = camera stamp | 'wall' = system clock | 'both' = log both
         self.declare_parameter('timestamp_source', 'header')
         self.declare_parameter('skip_duplicates', True)
+        self.declare_parameter('trigger_topic', '/start_capture')
+        self.declare_parameter('broker_topic', '/external/broker_robotic_topic')
+        self.declare_parameter('broadcast_code', 4)
 
         self.image_topic       = self.get_parameter('image_topic').value
+        self.broker_topic      = self.get_parameter('broker_topic').value
+        self.broadcast_code    = self.get_parameter('broadcast_code').value
         self.save_dir          = self.get_parameter('save_directory').value
         self.save_rate_hz      = self.get_parameter('save_rate_hz').value
         self.image_prefix      = self.get_parameter('image_prefix').value
         self.timestamp_source  = self.get_parameter('timestamp_source').value
         self.skip_duplicates   = self.get_parameter('skip_duplicates').value
+
 
         # --- Setup ---
         os.makedirs(self.save_dir, exist_ok=True)
@@ -36,6 +43,8 @@ class ImageSaverNode(Node):
         self.latest_msg: Image | None = None
         self.last_saved_seq = None   # used for duplicate detection
         self.saved_count = 0
+        self.capture_active = False
+
 
         # --- Subscriber ---
         self.subscription = self.create_subscription(
@@ -44,6 +53,13 @@ class ImageSaverNode(Node):
             self.image_callback,
             10
         )
+        self.subscription_brokerage = self.create_subscription(
+            Image,
+            self.broker_topic,
+            self.broker_callback,
+            10 # change
+        )
+        self.capture_active = False
 
         # --- Save timer ---
         save_period = 1.0 / self.save_rate_hz
@@ -58,9 +74,23 @@ class ImageSaverNode(Node):
             f"  Skip dupes : {self.skip_duplicates}"
         )
 
+    def trigger_callback(self, msg: String):                  
+    """Unlock saving when the trigger message arrives."""  
+    if not self.capture_active:                          
+        self.get_logger().info(                          
+            f"Trigger received: '{msg.data}' — image saving ACTIVE"  
+        )                                                
+        self.capture_active = True                       
+
     # ------------------------------------------------------------------
     def image_callback(self, msg: Image):
         self.latest_msg = msg
+        
+    def broker_callback(self, msg: TheoCode):
+        if int( msg ) == self.broadcast_code:
+       	    self.capture_active = True
+        else:
+            self.capture_active = False
 
     # ------------------------------------------------------------------
     def _ros_stamp_to_datetime(self, stamp) -> tuple[datetime, int]:
@@ -71,6 +101,9 @@ class ImageSaverNode(Node):
 
     # ------------------------------------------------------------------
     def save_image(self):
+        if not self.capture_active:
+            return 
+            
         if self.latest_msg is None:
             self.get_logger().warn(
                 'No image received yet — skipping.', throttle_duration_sec=5.0
