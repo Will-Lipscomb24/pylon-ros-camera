@@ -1,7 +1,7 @@
 image_saver_node:
   ros__parameters:
     image_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
-    broker_topic: "/external/broker_robotic_topic"
+    broker_topic: "/eowyn/external/broker_robotic_topic"
     save_directory: "/mnt/usb"
     save_rate_hz: 1.0
     image_prefix: "frame"

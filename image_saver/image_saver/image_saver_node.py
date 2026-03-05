@@ -2,9 +2,11 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from theo_msgs.msg import TheoCode
+
 
 import cv2
 import os
@@ -47,19 +49,32 @@ class ImageSaverNode(Node):
 
 
         # --- Subscriber ---
+        qos_imager = QoSProfile(
+	    reliability=ReliabilityPolicy.BEST_EFFORT,
+	    durability=DurabilityPolicy.VOLATILE,
+	    history=HistoryPolicy.KEEP_LAST,
+	    depth=5
+	)
         self.subscription = self.create_subscription(
             Image,
             self.image_topic,
             self.image_callback,
-            10
+            qos_imager
         )
+        
+        qos_brokerage = QoSProfile(
+	    history=HistoryPolicy.KEEP_LAST,
+	    depth=1,
+	    reliability=ReliabilityPolicy.RELIABLE,
+	    durability=DurabilityPolicy.TRANSIENT_LOCAL
+	)
         self.subscription_brokerage = self.create_subscription(
-            Image,
+            TheoCode,
             self.broker_topic,
             self.broker_callback,
-            10 # change
+            qos_brokerage
         )
-        self.capture_active = False
+
 
         # --- Save timer ---
         save_period = 1.0 / self.save_rate_hz
@@ -72,22 +87,14 @@ class ImageSaverNode(Node):
             f"  Rate       : {self.save_rate_hz} Hz\n"
             f"  Timestamp  : {self.timestamp_source}\n"
             f"  Skip dupes : {self.skip_duplicates}"
-        )
-
-    def trigger_callback(self, msg: String):                  
-    """Unlock saving when the trigger message arrives."""  
-    if not self.capture_active:                          
-        self.get_logger().info(                          
-            f"Trigger received: '{msg.data}' — image saving ACTIVE"  
-        )                                                
-        self.capture_active = True                       
+        )                    
 
     # ------------------------------------------------------------------
     def image_callback(self, msg: Image):
         self.latest_msg = msg
         
     def broker_callback(self, msg: TheoCode):
-        if int( msg ) == self.broadcast_code:
+        if int( msg.code ) == self.broadcast_code:
        	    self.capture_active = True
         else:
             self.capture_active = False
