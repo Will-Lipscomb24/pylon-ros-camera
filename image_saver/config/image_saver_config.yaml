@@ -1,9 +1,12 @@
 image_saver_node:
   ros__parameters:
     image_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
-    broker_topic: "/external/broker_robotic_topic"
+    broker_topic: "/eowyn/external/broker_robotic_topic"
+    trigger_topic: "/image_saver/trigger"
     save_directory: "/mnt/usb"
     save_rate_hz: 1.0
     image_prefix: "frame"
     timestamp_source: "header"   # 'header', 'wall', or 'both'
-    skip_duplicates: true
+    skip_duplicates: True
+    always_capture: False
+    wait_for_event_saver: True
