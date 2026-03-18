@@ -21,7 +21,7 @@ def generate_launch_description():
     # --- Image Saver Arguments ---
     declare_save_directory_cmd = DeclareLaunchArgument(
         'save_directory',
-        default_value='/tmp/captured_images',
+        default_value='/mnt/usb',
         description='Directory to save images to.'
     )
 

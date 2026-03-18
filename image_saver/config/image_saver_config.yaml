@@ -3,7 +3,7 @@ image_saver_node:
     image_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
     broker_topic: "/eowyn/external/broker_robotic_topic"
     save_directory: "/mnt/usb"
-    save_rate_hz: 1.0
+    save_rate_hz: 5.0
     image_prefix: "frame"
     timestamp_source: "header"   # 'header', 'wall', or 'both'
     skip_duplicates: true
