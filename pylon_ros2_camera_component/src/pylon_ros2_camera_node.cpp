@@ -186,7 +186,7 @@ void PylonROS2CameraNode::initPublishers()
 
   if (this->pylon_camera_parameter_set_.publishCompressedImage())
   {
-    msg_name = msg_prefix + "image_raw/compressed";
+    msg_name = msg_prefix + "image_compressed";
     this->img_raw_compressed_pub_ = this->create_publisher<sensor_msgs::msg::CompressedImage>(msg_name, rclcpp::SensorDataQoS());
 
     msg_name = msg_prefix + "camera_info";
