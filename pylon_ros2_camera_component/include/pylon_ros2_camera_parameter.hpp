@@ -114,6 +114,31 @@ public:
      */
     void setCameraInfoURL(rclcpp::Node& nh, const std::string& camera_info_url);
 
+    /**
+     * Getter for enabling/disabling raw image publication.
+     */
+    bool publishRawImage() const;
+
+    /**
+     * Getter for enabling/disabling compressed image publication.
+     */
+    bool publishCompressedImage() const;
+
+    /**
+     * Getter for the configured compressed image format.
+     */
+    const std::string& compressedImageFormat() const;
+
+    /**
+     * Getter for the configured JPEG quality.
+     */
+    int compressedImageJpegQuality() const;
+
+    /**
+     * Getter for the configured PNG compression level.
+     */
+    int compressedImagePngLevel() const;
+
 public:
     /** Binning factor to get downsampled images. It refers here to any camera
      * setting which combines rectangular neighborhoods of pixels into larger
@@ -379,6 +404,31 @@ protected:
      * 'bayer_gbrg8', 'bayer_rggb8' and 'yuv422'
      */
     std::string image_encoding_;
+
+    /**
+     * Enable publication on ~/image_raw.
+     */
+    bool publish_raw_image_;
+
+    /**
+     * Enable publication on ~/image_raw/compressed.
+     */
+    bool publish_compressed_image_;
+
+    /**
+     * Compression format used for ~/image_raw/compressed.
+     */
+    std::string compressed_image_format_;
+
+    /**
+     * JPEG quality used when compressed_image_format_ is jpeg.
+     */
+    int compressed_image_jpeg_quality_;
+
+    /**
+     * PNG compression level used when compressed_image_format_ is png.
+     */
+    int compressed_image_png_level_;
 };
 
 }  // namespace pylon_ros2_camera

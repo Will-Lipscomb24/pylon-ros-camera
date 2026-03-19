@@ -7,9 +7,9 @@ if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
 
-# Default to C++14
+# Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -51,6 +51,7 @@ find_package(rclcpp_components REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
 find_package(pcl_ros REQUIRED)
 find_package(camera_info_manager REQUIRED)
 find_package(image_geometry REQUIRED)
@@ -94,6 +95,7 @@ set(node_plugins "")
 add_library(${PROJECT_NAME} SHARED
 	${CMAKE_CURRENT_SOURCE_DIR}/src/binary_exposure_search.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/encoding_conversions.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/image_compression.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/${PYLON_ROS2_CAMERA_FILE_PREFIX}.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/${PYLON_ROS2_CAMERA_FILE_PREFIX}_node.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/${PYLON_ROS2_CAMERA_FILE_PREFIX}_parameter.cpp
@@ -102,6 +104,7 @@ add_library(${PROJECT_NAME} SHARED
 target_include_directories(${PROJECT_NAME}
 	PUBLIC
     	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+		$<BUILD_INTERFACE:${OpenCV_INCLUDE_DIRS}>
 		$<BUILD_INTERFACE:${Pylon_INCLUDE_DIRS}>
     	$<INSTALL_INTERFACE:include>
 )
@@ -111,6 +114,7 @@ target_compile_definitions(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+	${OpenCV_LIBRARIES}
 	${PYLON_ROS2_CAMERA_LIBRARIES}
 )
 
@@ -174,6 +178,7 @@ install(
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # uncomment the line when a copyright and license is not present in all source files
@@ -182,6 +187,25 @@ if(BUILD_TESTING)
   # uncomment the line when this package is not in a git repo
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  ament_add_gtest(test_image_compression
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/test_image_compression.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/image_compression.cpp
+  )
+
+  if(TARGET test_image_compression)
+    target_include_directories(test_image_compression PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_libraries(test_image_compression
+      ${OpenCV_LIBRARIES}
+    )
+    ament_target_dependencies(test_image_compression
+      cv_bridge
+      sensor_msgs
+    )
+  endif()
 endif()
 
 ament_export_include_directories(include)

@@ -21,6 +21,24 @@
     #  'bayer_gbrg8' and 'bayer_rggb8'
     # image_encoding: 'mono8'
 
+    #  Enable publication on ~/image_raw. Disable this if you only want to
+    #  broadcast ~/image_raw/compressed.
+    # publish_raw_image: true
+
+    #  Enable publication on ~/image_raw/compressed as
+    #  sensor_msgs/msg/CompressedImage.
+    # publish_compressed_image: false
+
+    #  Compression format for ~/image_raw/compressed. Supported values are
+    #  'jpeg', 'jpg' and 'png'.
+    # compressed_image_format: 'jpeg'
+
+    #  JPEG quality in [1, 100].
+    # compressed_image_jpeg_quality: 80
+
+    #  PNG compression level in [0, 9].
+    # compressed_image_png_level: 3
+
     #  Binning factor to get downsampled images. It refers here to any camera
     #  setting which combines rectangular neighborhoods of pixels into larger
     #  "super-pixels." It reduces the resolution of the output image to

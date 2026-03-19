@@ -32,6 +32,7 @@
 
 //#include <functional>
 
+#include "image_compression.hpp"
 #include "pylon_ros2_camera_node.hpp"
 
 
@@ -41,6 +42,14 @@ namespace pylon_ros2_camera
 namespace
 {
     static const rclcpp::Logger LOGGER = rclcpp::get_logger("basler.pylon.ros2.pylon_ros2_camera_node");
+
+template<typename PublisherT>
+bool hasSubscribers(const typename PublisherT::SharedPtr& publisher)
+{
+  return publisher &&
+         (publisher->get_subscription_count() != 0 ||
+          publisher->get_intra_process_subscription_count() != 0);
+}
 }
 
 PylonROS2CameraNode::PylonROS2CameraNode(const rclcpp::NodeOptions& options)
@@ -65,6 +74,9 @@ PylonROS2CameraNode::PylonROS2CameraNode(const rclcpp::NodeOptions& options)
   //RCUTILS_LOG_SEVERITY_WARN
   //RCUTILS_LOG_SEVERITY_ERROR
   //RCUTILS_LOG_SEVERITY_FATAL
+
+  // Publishers depend on transport parameters, so load them before creating interfaces.
+  this->pylon_camera_parameter_set_.readFromRosParameterServer(*this);
 
   // initializing the interfaces
   this->initInterfaces();
@@ -162,12 +174,24 @@ void PylonROS2CameraNode::initPublishers()
   msg_name = msg_prefix + "status";
   this->component_status_pub_ = this->create_publisher<pylon_ros2_camera_interfaces::msg::ComponentStatus>(msg_name, 5);
 
-  msg_name = msg_prefix + "image_raw";
-  this->img_raw_pub_ = image_transport::create_camera_publisher(
-  	this, 
-  	msg_name,
-  	rclcpp::QoS(rclcpp::SensorDataQoS()).get_rmw_qos_profile()
-  );
+  if (this->pylon_camera_parameter_set_.publishRawImage())
+  {
+    msg_name = msg_prefix + "image_raw";
+    this->img_raw_pub_ = image_transport::create_camera_publisher(
+      this,
+      msg_name,
+      rclcpp::QoS(rclcpp::SensorDataQoS()).get_rmw_qos_profile()
+    );
+  }
+
+  if (this->pylon_camera_parameter_set_.publishCompressedImage())
+  {
+    msg_name = msg_prefix + "image_raw/compressed";
+    this->img_raw_compressed_pub_ = this->create_publisher<sensor_msgs::msg::CompressedImage>(msg_name, rclcpp::SensorDataQoS());
+
+    msg_name = msg_prefix + "camera_info";
+    this->camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(msg_name, rclcpp::SensorDataQoS());
+  }
 
   // blaze related topics
   msg_name = msg_prefix + "blaze_cloud"; this->blaze_cloud_topic_name_ = msg_name;
@@ -873,6 +897,13 @@ bool PylonROS2CameraNode::startGrabbing()
       << "exposure = " << this->pylon_camera_->currentExposure());
   }
 
+  if (!this->pylon_camera_->isBlaze() && this->pylon_camera_parameter_set_.publishCompressedImage())
+  {
+    RCLCPP_INFO_STREAM(LOGGER, "Compressed image publishing enabled on ~/image_raw/compressed"
+      << " using format '" << this->pylon_camera_parameter_set_.compressedImageFormat() << "'"
+      << " (publish_raw_image=" << (this->pylon_camera_parameter_set_.publishRawImage() ? "true" : "false") << ")");
+  }
+
   // Framerate Settings
   if (this->pylon_camera_->maxPossibleFramerate() < this->pylon_camera_parameter_set_.frameRate())
   {
@@ -932,29 +963,65 @@ void PylonROS2CameraNode::spin()
 
   if (!this->pylon_camera_->isBlaze())
   {
-    const bool any_subscriber = (this->img_raw_pub_.getNumSubscribers() != 0 || this->getNumSubscribersRectImagePub() != 0);
+    const bool has_raw_subscribers = this->pylon_camera_parameter_set_.publishRawImage() &&
+                                     this->img_raw_pub_.getNumSubscribers() != 0;
+    const bool has_rect_subscribers = this->getNumSubscribersRectImagePub() != 0;
+    const bool has_compressed_subscribers = this->pylon_camera_parameter_set_.publishCompressedImage() &&
+                                            hasSubscribers<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>>(this->img_raw_compressed_pub_);
+    const bool any_subscriber = has_raw_subscribers || has_rect_subscribers || has_compressed_subscribers;
     if (!this->isSleeping() && any_subscriber)
     {
-      if (any_subscriber)
+      if (!this->grabImage())
       {
-        if (!this->grabImage())
-        {
-          return;
-        }
+        return;
       }
 
-      if (this->img_raw_pub_.getNumSubscribers() > 0)
+      sensor_msgs::msg::CameraInfo cam_info;
+      const bool needs_camera_info = has_raw_subscribers || has_compressed_subscribers;
+      if (needs_camera_info)
       {
         // get actual cam_info-object in every frame, because it might have
         // changed due to a 'set_camera_info'-service call
-        sensor_msgs::msg::CameraInfo cam_info = this->camera_info_manager_->getCameraInfo();
+        cam_info = this->camera_info_manager_->getCameraInfo();
         cam_info.header.stamp = this->img_raw_msg_.header.stamp;
+        cam_info.header.frame_id = this->img_raw_msg_.header.frame_id;
+      }
+
+      if (has_raw_subscribers)
+      {
         // publish via image_transport
         this->img_raw_pub_.publish(this->img_raw_msg_, cam_info);
       }
 
+      if (has_compressed_subscribers)
+      {
+        sensor_msgs::msg::CompressedImage compressed_msg;
+        ImageCompressionOptions compression_options;
+        compression_options.format = this->pylon_camera_parameter_set_.compressedImageFormat();
+        compression_options.jpeg_quality = this->pylon_camera_parameter_set_.compressedImageJpegQuality();
+        compression_options.png_level = this->pylon_camera_parameter_set_.compressedImagePngLevel();
+
+        std::string error_message;
+        if (!compressImageMessage(this->img_raw_msg_, compression_options, compressed_msg, error_message))
+        {
+          RCLCPP_ERROR_THROTTLE(LOGGER,
+                                *this->get_clock(),
+                                5000,
+                                "Failed to publish ~/image_raw/compressed: %s",
+                                error_message.c_str());
+        }
+        else
+        {
+          this->img_raw_compressed_pub_->publish(compressed_msg);
+          if (!has_raw_subscribers && this->camera_info_pub_)
+          {
+            this->camera_info_pub_->publish(cam_info);
+          }
+        }
+      }
+
       // this->getNumSubscribersRectImagePub() involves that this->camera_info_manager_->isCalibrated() == true
-      if (this->getNumSubscribersRectImagePub() > 0)
+      if (has_rect_subscribers)
       {
         this->cv_bridge_img_rect_->header.stamp = this->img_raw_msg_.header.stamp;
         assert(this->pinhole_model_->initialized());

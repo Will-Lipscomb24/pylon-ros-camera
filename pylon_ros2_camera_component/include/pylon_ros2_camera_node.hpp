@@ -39,6 +39,7 @@
 #include "pylon_ros2_camera_interfaces/msg/current_params.hpp"
 #include "pylon_ros2_camera_interfaces/msg/component_status.hpp"
 
+#include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
@@ -77,7 +78,7 @@
 #include <camera_info_manager/camera_info_manager.hpp>
 #include <image_geometry/pinhole_camera_model.h>
 
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 
 #include <image_transport/image_transport.hpp>
 #include <image_transport/camera_publisher.hpp>
@@ -1659,6 +1660,8 @@ protected:
   pylon_ros2_camera_interfaces::msg::CurrentParams current_params_;
   rclcpp::Publisher<pylon_ros2_camera_interfaces::msg::ComponentStatus>::SharedPtr component_status_pub_;
   pylon_ros2_camera_interfaces::msg::ComponentStatus cm_status_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr img_raw_compressed_pub_;
   // image transport publishers
   image_transport::CameraPublisher img_raw_pub_;
   image_transport::Publisher* img_rect_pub_;

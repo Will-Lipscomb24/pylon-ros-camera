@@ -29,6 +29,9 @@
 #include "pylon_ros2_camera_parameter.hpp"
 #include <sensor_msgs/image_encodings.hpp>
 
+#include <algorithm>
+#include <cctype>
+
 
 namespace pylon_ros2_camera
 {
@@ -78,7 +81,12 @@ PylonROS2CameraParameter::PylonROS2CameraParameter() :
     device_user_id_(""),
     frame_rate_(5.0),
     camera_info_url_(""),
-    image_encoding_("")
+    image_encoding_(""),
+    publish_raw_image_(true),
+    publish_compressed_image_(false),
+    compressed_image_format_("jpeg"),
+    compressed_image_jpeg_quality_(80),
+    compressed_image_png_level_(3)
 {
     // information logging severity mode
     //rcutils_ret_t __attribute__((unused)) res = rcutils_logging_set_logger_level(LOGGER.get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
@@ -221,6 +229,56 @@ void PylonROS2CameraParameter::readFromRosParameterServer(rclcpp::Node& nh)
     }
 
     this->image_encoding_ = encoding;
+
+    // raw image publisher
+    RCLCPP_DEBUG(LOGGER, "---> publish_raw_image");
+
+    if (!nh.has_parameter("publish_raw_image"))
+    {
+        nh.declare_parameter<bool>("publish_raw_image", true);
+    }
+
+    nh.get_parameter("publish_raw_image", this->publish_raw_image_);
+
+    // compressed image publisher
+    RCLCPP_DEBUG(LOGGER, "---> publish_compressed_image");
+
+    if (!nh.has_parameter("publish_compressed_image"))
+    {
+        nh.declare_parameter<bool>("publish_compressed_image", false);
+    }
+
+    nh.get_parameter("publish_compressed_image", this->publish_compressed_image_);
+
+    // compressed image format
+    RCLCPP_DEBUG(LOGGER, "---> compressed_image_format");
+
+    if (!nh.has_parameter("compressed_image_format"))
+    {
+        nh.declare_parameter<std::string>("compressed_image_format", "jpeg");
+    }
+
+    nh.get_parameter("compressed_image_format", this->compressed_image_format_);
+
+    // compressed image JPEG quality
+    RCLCPP_DEBUG(LOGGER, "---> compressed_image_jpeg_quality");
+
+    if (!nh.has_parameter("compressed_image_jpeg_quality"))
+    {
+        nh.declare_parameter<int>("compressed_image_jpeg_quality", 80);
+    }
+
+    nh.get_parameter("compressed_image_jpeg_quality", this->compressed_image_jpeg_quality_);
+
+    // compressed image PNG compression level
+    RCLCPP_DEBUG(LOGGER, "---> compressed_image_png_level");
+
+    if (!nh.has_parameter("compressed_image_png_level"))
+    {
+        nh.declare_parameter<int>("compressed_image_png_level", 3);
+    }
+
+    nh.get_parameter("compressed_image_png_level", this->compressed_image_png_level_);
 
     // ##########################
     //  image intensity settings
@@ -565,6 +623,51 @@ void PylonROS2CameraParameter::validateParameterSet(rclcpp::Node& nh)
         this->setFrameRate(nh, 5.0);
     }
 
+    std::transform(this->compressed_image_format_.begin(),
+                   this->compressed_image_format_.end(),
+                   this->compressed_image_format_.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (this->compressed_image_format_ == "jpg")
+    {
+        this->compressed_image_format_ = "jpeg";
+    }
+
+    if (this->compressed_image_format_ != "jpeg" &&
+        this->compressed_image_format_ != "png")
+    {
+        RCLCPP_WARN_STREAM(LOGGER, "The specified compressed_image_format value - "
+                                << this->compressed_image_format_
+                                << " - is not supported. Will reset it to 'jpeg'.");
+        this->compressed_image_format_ = "jpeg";
+    }
+    nh.set_parameter(rclcpp::Parameter("compressed_image_format", this->compressed_image_format_));
+
+    if (this->compressed_image_jpeg_quality_ < 1 || this->compressed_image_jpeg_quality_ > 100)
+    {
+        RCLCPP_WARN_STREAM(LOGGER, "The specified compressed_image_jpeg_quality value - "
+                                << this->compressed_image_jpeg_quality_
+                                << " - is out of valid range [1, 100]. Will reset it to 80.");
+        this->compressed_image_jpeg_quality_ = 80;
+        nh.set_parameter(rclcpp::Parameter("compressed_image_jpeg_quality", this->compressed_image_jpeg_quality_));
+    }
+
+    if (this->compressed_image_png_level_ < 0 || this->compressed_image_png_level_ > 9)
+    {
+        RCLCPP_WARN_STREAM(LOGGER, "The specified compressed_image_png_level value - "
+                                << this->compressed_image_png_level_
+                                << " - is out of valid range [0, 9]. Will reset it to 3.");
+        this->compressed_image_png_level_ = 3;
+        nh.set_parameter(rclcpp::Parameter("compressed_image_png_level", this->compressed_image_png_level_));
+    }
+
+    if (!this->publish_raw_image_ && !this->publish_compressed_image_)
+    {
+        RCLCPP_WARN(LOGGER, "Both publish_raw_image and publish_compressed_image are false. Will re-enable raw image publication.");
+        this->publish_raw_image_ = true;
+        nh.set_parameter(rclcpp::Parameter("publish_raw_image", this->publish_raw_image_));
+    }
+
     if (this->exposure_given_ && (this->exposure_ <= 0.0 || this->exposure_ > 1e7))
     {
         RCLCPP_WARN_STREAM(LOGGER, "The specified exposure value - " << this->exposure_ << " ms - is out of valid range!"
@@ -660,6 +763,31 @@ void PylonROS2CameraParameter::setFrameRate(rclcpp::Node& nh, const double& fram
 const std::string& PylonROS2CameraParameter::cameraInfoURL() const
 {
     return this->camera_info_url_;
+}
+
+bool PylonROS2CameraParameter::publishRawImage() const
+{
+    return this->publish_raw_image_;
+}
+
+bool PylonROS2CameraParameter::publishCompressedImage() const
+{
+    return this->publish_compressed_image_;
+}
+
+const std::string& PylonROS2CameraParameter::compressedImageFormat() const
+{
+    return this->compressed_image_format_;
+}
+
+int PylonROS2CameraParameter::compressedImageJpegQuality() const
+{
+    return this->compressed_image_jpeg_quality_;
+}
+
+int PylonROS2CameraParameter::compressedImagePngLevel() const
+{
+    return this->compressed_image_png_level_;
 }
 
 void PylonROS2CameraParameter::setCameraInfoURL(rclcpp::Node& nh, const std::string& camera_info_url)

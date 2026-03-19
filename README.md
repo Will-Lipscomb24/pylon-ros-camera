@@ -140,6 +140,18 @@ USB cameras must be disconnected and then reconnected after setting a new device
 - **image_encoding (not for the blaze)**  
   The encoding of the pixels -- channel meaning, ordering, size taken from the list of strings in include file *sensor_msgs/image_encodings.h*. The supported encodings are 'mono8', 'bgr8', 'rgb8', 'bayer_bggr8', 'bayer_gbrg8' and 'bayer_rggb8'. Default values are 'mono8' and 'rgb8'.
 
+- **publish_raw_image (not for the blaze)**
+  Enable publication on `~/image_raw`. Leave this enabled for the current behavior, or disable it if the deployment should only expose the compressed stream.
+
+- **publish_compressed_image (not for the blaze)**
+  Enable publication on `~/image_raw/compressed` as `sensor_msgs/msg/CompressedImage`. If raw publication is disabled or there are no raw subscribers, the node also publishes `~/camera_info` directly so compressed consumers still receive calibration.
+
+- **compressed_image_format (not for the blaze)**
+  Compression codec used for `~/image_raw/compressed`. Supported values are `jpeg`, `jpg` and `png`. The default is `jpeg`.
+
+- **compressed_image_jpeg_quality & compressed_image_png_level (not for the blaze)**
+  JPEG quality in `[1, 100]` and PNG compression level in `[0, 9]`.
+
 - **binning_x & binning_y (not for the blaze)**  
   Binning factor to get downsampled images. It refers here to any camera setting which combines rectangular neighborhoods of pixels into larger "super-pixels." It reduces the resolution of the output image to (width / binning_x) x (height / binning_y). The default values binning_x = binning_y = 0 are considered the same as binning_x = binning_y = 1 (no subsampling).
 
@@ -217,8 +229,91 @@ The following settings do **NOT** have to be set. Each camera has default values
 
 **ROS2 pylon node specific parameter**
 
-- **startup_user_set (not for the blaze)**  
-  Flag specifying if a given user set is used when starting the camera. Can be set to `Default`, `UserSet1`, `UserSet2`, `UserSet3`, and `CurrentSetting`.  
+- **startup_user_set (not for the blaze)**
+  Flag specifying if a given user set is used when starting the camera. Can be set to `Default`, `UserSet1`, `UserSet2`, `UserSet3`, and `CurrentSetting`.
+
+## Compressed Topic Patch
+
+The following changes were added to publish a network-facing compressed stream directly from the camera node:
+
+- Added `~/image_raw/compressed` as a `sensor_msgs/msg/CompressedImage` topic with `jpeg` and `png` support.
+- Added `publish_raw_image` so the node can run in compressed-only mode.
+- Added direct `~/camera_info` publication whenever compressed images are being published without a simultaneous raw image transport publish.
+- Added a dedicated compression helper plus tests that exercise 4096x3000 images written to disk before compression.
+
+Example configuration:
+
+```yaml
+publish_raw_image: false
+publish_compressed_image: true
+compressed_image_format: 'jpeg'
+compressed_image_jpeg_quality: 80
+```
+
+With the default launch arguments (`camera_id:=basler_cam`, `node_name:=pylon_ros2_camera_node`), subscribers should use:
+
+- `/basler_cam/pylon_ros2_camera_node/image_raw/compressed` [`sensor_msgs/msg/CompressedImage`]
+- `/basler_cam/pylon_ros2_camera_node/camera_info` [`sensor_msgs/msg/CameraInfo`]
+
+Python subscriber example:
+
+```python
+import cv2
+import numpy as np
+import rclpy
+
+from rclpy.node import Node
+from sensor_msgs.msg import CameraInfo, CompressedImage
+
+
+class CameraSubscriber(Node):
+    def __init__(self):
+        super().__init__('camera_subscriber')
+
+        self.image_sub = self.create_subscription(
+            CompressedImage,
+            '/basler_cam/pylon_ros2_camera_node/image_raw/compressed',
+            self.image_callback,
+            10,
+        )
+
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo,
+            '/basler_cam/pylon_ros2_camera_node/camera_info',
+            self.camera_info_callback,
+            10,
+        )
+
+    def image_callback(self, msg: CompressedImage):
+        image = cv2.imdecode(np.frombuffer(msg.data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            self.get_logger().error('Failed to decode compressed image')
+            return
+
+        self.get_logger().info(f'Received image with shape {image.shape}')
+
+    def camera_info_callback(self, msg: CameraInfo):
+        self.get_logger().info(f'Received camera matrix K={list(msg.k)}')
+
+
+def main():
+    rclpy.init()
+    node = CameraSubscriber()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+```
+
+If `camera_id` or `node_name` is changed at launch time, update the topic paths accordingly.
+
+If you change binning or ROI, update the calibration matrices to match the new image geometry. For a full-resolution calibration with `(fx, fy, cx, cy)` and a cropped output defined by `(roi_x_offset, roi_y_offset, binning_x, binning_y)`:
+
+- `fx' = fx / binning_x`
+- `fy' = fy / binning_y`
+- `cx' = (cx - roi_x_offset) / binning_x`
+- `cy' = (cy - roi_y_offset) / binning_y`
+
+Apply the same substitutions to the projection matrix `P` (`P[0]`, `P[5]`, `P[2]`, `P[6]`). This patch republishes the current `CameraInfo`, but it does not synthesize a new calibration after ROI or binning changes.
 
 - **enable_status_publisher**  
   Flag used to enable/disable the node status publisher.
