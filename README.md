@@ -371,6 +371,45 @@ No scaled `CameraInfo` is synthesized or published for the resized-compressed st
 - **enable_current_params_publisher**  
   Flag used to enable/disable the current camera publisher.
 
+## Standalone Viewer
+
+For a listening computer that only needs to watch the network stream, use the standalone viewer script:
+
+- script: `tools/view_compressed_stream.py`
+- default topic: `/basler_cam/pylon_ros2_camera_node/image_compressed`
+- message type: `sensor_msgs/msg/CompressedImage`
+
+This is a desktop GUI viewer built on OpenCV. It opens a local window on the listening machine; it is not a browser stream.
+
+Listener-machine runtime requirements:
+
+- ROS 2 Python environment with `rclpy` and `sensor_msgs`
+- `numpy`
+- Python OpenCV bindings (`cv2`)
+- `PyYAML` available in the Python environment used to import `rclpy`
+- a local desktop session capable of opening OpenCV windows
+
+Example usage:
+
+```bash
+cd /home/saa4743/agnc_repos/pylon-ros-camera
+source /opt/ros/$ROS_DISTRO/setup.bash
+python3 tools/view_compressed_stream.py \
+  --topic /basler_cam/pylon_ros2_camera_node/image_compressed
+```
+
+Useful options:
+
+- `--window-name "Basler Compressed Stream"`
+- `--display-scale 0.75`
+- `--stale-timeout-sec 2.0`
+- `--no-overlay`
+
+Controls:
+
+- press `q` or `Esc` to close the window
+- `Ctrl+C` shuts the viewer down cleanly
+
 
 ## PTP synchronization (not for the blaze)
 
