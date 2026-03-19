@@ -258,6 +258,21 @@ compressed_image_format: 'jpeg'
 compressed_image_jpeg_quality: 80
 ```
 
+These options are set in the camera wrapper YAML under the node's `ros__parameters` block. By default, the launch file loads `pylon_ros2_camera_wrapper/config/cam_config_feb_11.yaml`, and the compression settings live there under:
+
+```yaml
+/basler_cam:
+  pylon_ros2_camera_node:
+    ros__parameters:
+      publish_raw_image: false
+      publish_compressed_image: true
+      compressed_image_format: 'jpeg'
+      compressed_image_jpeg_quality: 80
+      compressed_image_png_level: 3
+```
+
+The file `pylon_ros2_camera_wrapper/config/default.yaml` also contains the same keys as a commented template. If you launch with a custom `config_file`, set the same parameters in that file instead. If `camera_id` or `node_name` changes at launch time, update the YAML nesting accordingly.
+
 With the default launch arguments (`camera_id:=basler_cam`, `node_name:=pylon_ros2_camera_node`), subscribers should use:
 
 - `/basler_cam/pylon_ros2_camera_node/image_raw/compressed` [`sensor_msgs/msg/CompressedImage`]
