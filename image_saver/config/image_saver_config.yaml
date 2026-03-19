@@ -7,3 +7,4 @@ image_saver_node:
     image_prefix: "frame"
     timestamp_source: "header"   # 'header', 'wall', or 'both'
     skip_duplicates: true
+    is_compressed_image: true
