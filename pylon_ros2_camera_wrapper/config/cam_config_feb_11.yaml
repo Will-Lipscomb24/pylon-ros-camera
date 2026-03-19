@@ -26,7 +26,7 @@
       publish_raw_image: false
       publish_compressed_image: true
       compressed_image_format: 'jpeg'
-      compressed_image_jpeg_quality: 80 # between 1 and 100, 1 means worst quality, 100 means best quality
+      compressed_image_jpeg_quality: 100 # between 1 and 100, 1 means worst quality, 100 means best quality
       compressed_image_png_level: 3 # between 0 and 9, 0 means no compression, 9 means maximum compression
       compressed_image_target_width: 1024 # set both target dimensions to enable resized-compressed transport on ~/image_compressed
       compressed_image_target_height: 750 # resize mode does not publish ~/camera_info and logs scale factors at startup
