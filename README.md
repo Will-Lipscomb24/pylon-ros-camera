@@ -36,6 +36,14 @@ sudo apt install ros-humble-diagnostic-updater
 sudo apt install ros-humble-pcl-ros
 ```
 
+If you do not use a blaze camera and want to remove the `pcl_ros` dependency from this repository, note that it is only needed by the blaze point cloud path. A non-blaze-only cleanup would require:
+
+- removing `find_package(pcl_ros REQUIRED)` and `pcl_ros` from the dependency list in `pylon_ros2_camera_component/CMakeLists.txt`
+- removing `pcl_ros` from the `build_depend` and `exec_depend` entries in `pylon_ros2_camera_component/package.xml`
+- refactoring the blaze-specific code in `pylon_ros2_camera_component/include/internal/impl/pylon_ros2_camera_blaze.hpp` so it no longer uses `pcl::PointCloud<pcl::PointXYZRGB>` and `pcl::toROSMsg(...)`
+
+Until that blaze path is split out or made optional, a full build of `pylon_ros2_camera_component` still requires `pcl_ros` even if you only plan to use the 2D image stream.
+
 Compile the workspace using `colcon`:  
 ``cd ~/dev_ws && colcon build``  
 
