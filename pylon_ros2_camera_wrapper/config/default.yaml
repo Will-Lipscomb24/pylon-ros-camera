@@ -22,14 +22,14 @@
     # image_encoding: 'mono8'
 
     #  Enable publication on ~/image_raw. Disable this if you only want to
-    #  broadcast ~/image_raw/compressed.
+    #  broadcast ~/image_compressed.
     # publish_raw_image: true
 
-    #  Enable publication on ~/image_raw/compressed as
+    #  Enable publication on ~/image_compressed as
     #  sensor_msgs/msg/CompressedImage.
     # publish_compressed_image: false
 
-    #  Compression format for ~/image_raw/compressed. Supported values are
+    #  Compression format for ~/image_compressed. Supported values are
     #  'jpeg', 'jpg' and 'png'.
     # compressed_image_format: 'jpeg'
 
@@ -38,6 +38,14 @@
 
     #  PNG compression level in [0, 9].
     # compressed_image_png_level: 3
+
+    #  Optional resized-compressed output geometry for ~/image_compressed.
+    #  Set both values to 0 to keep the full-resolution compressed stream.
+    #  Set both to matching non-zero values to enable resized-compressed mode.
+    #  This mode requires publish_raw_image: false and does not publish
+    #  ~/camera_info.
+    # compressed_image_target_width: 0
+    # compressed_image_target_height: 0
 
     #  Binning factor to get downsampled images. It refers here to any camera
     #  setting which combines rectangular neighborhoods of pixels into larger

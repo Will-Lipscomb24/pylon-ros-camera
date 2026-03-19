@@ -8,10 +8,13 @@
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -107,6 +110,88 @@ bool buildCompressionPlan(const sensor_msgs::msg::Image& image_msg,
 }
 }  // namespace
 
+bool hasResizeTarget(const ImageCompressionOptions& options)
+{
+  return options.target_width > 0 || options.target_height > 0;
+}
+
+bool validateResizeTarget(const ImageCompressionOptions& options,
+                          std::string& error_message)
+{
+  error_message.clear();
+
+  if (options.target_width < 0 || options.target_height < 0)
+  {
+    error_message = "compressed image resize target dimensions must be greater than or equal to zero";
+    return false;
+  }
+
+  if (!hasResizeTarget(options))
+  {
+    return true;
+  }
+
+  if (options.target_width <= 0 || options.target_height <= 0)
+  {
+    error_message = "compressed image resize requires both target_width and target_height";
+    return false;
+  }
+
+  return true;
+}
+
+bool validateResizeTargetAgainstSource(const ImageCompressionOptions& options,
+                                       const std::size_t source_width,
+                                       const std::size_t source_height,
+                                       std::string& error_message)
+{
+  if (!validateResizeTarget(options, error_message))
+  {
+    return false;
+  }
+
+  if (!hasResizeTarget(options))
+  {
+    return true;
+  }
+
+  if (source_width == 0 || source_height == 0)
+  {
+    error_message = "source image geometry is invalid";
+    return false;
+  }
+
+  const std::size_t target_width = static_cast<std::size_t>(options.target_width);
+  const std::size_t target_height = static_cast<std::size_t>(options.target_height);
+
+  if (target_width > source_width || target_height > source_height)
+  {
+    error_message = "compressed image resize target must be smaller than or equal to the source image";
+    return false;
+  }
+
+  if (source_width * target_height != source_height * target_width)
+  {
+    error_message = "compressed image resize target must preserve the source aspect ratio";
+    return false;
+  }
+
+  return true;
+}
+
+std::size_t selectPreferredEqualBinningFactor(const std::size_t source_width,
+                                              const std::size_t source_height,
+                                              const std::size_t target_width,
+                                              const std::size_t target_height)
+{
+  if (source_width == 0 || source_height == 0 || target_width == 0 || target_height == 0)
+  {
+    return 1;
+  }
+
+  return std::max<std::size_t>(1, std::min(source_width / target_width, source_height / target_height));
+}
+
 bool compressImageMessage(const sensor_msgs::msg::Image& image_msg,
                           const ImageCompressionOptions& options,
                           sensor_msgs::msg::CompressedImage& compressed_msg,
@@ -150,9 +235,32 @@ bool compressImageMessage(const sensor_msgs::msg::Image& image_msg,
     encode_params = {cv::IMWRITE_PNG_COMPRESSION, options.png_level};
   }
 
+  if (!validateResizeTargetAgainstSource(options,
+                                         image_msg.width,
+                                         image_msg.height,
+                                         error_message))
+  {
+    return false;
+  }
+
+  cv::Mat image_to_encode = cv_image->image;
+  cv::Mat resized_image;
+  if (hasResizeTarget(options) &&
+      (image_msg.width != static_cast<std::uint32_t>(options.target_width) ||
+       image_msg.height != static_cast<std::uint32_t>(options.target_height)))
+  {
+    cv::resize(cv_image->image,
+               resized_image,
+               cv::Size(options.target_width, options.target_height),
+               0.0,
+               0.0,
+               cv::INTER_AREA);
+    image_to_encode = resized_image;
+  }
+
   compressed_msg.header = image_msg.header;
   compressed_msg.format = compressed_format;
-  if (!cv::imencode(extension, cv_image->image, compressed_msg.data, encode_params))
+  if (!cv::imencode(extension, image_to_encode, compressed_msg.data, encode_params))
   {
     error_message = "OpenCV failed to encode compressed image";
     return false;

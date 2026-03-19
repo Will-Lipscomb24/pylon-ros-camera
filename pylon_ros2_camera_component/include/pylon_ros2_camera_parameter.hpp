@@ -139,6 +139,31 @@ public:
      */
     int compressedImagePngLevel() const;
 
+    /**
+     * Getter for the compressed-image resize target width.
+     */
+    int compressedImageTargetWidth() const;
+
+    /**
+     * Getter for the compressed-image resize target height.
+     */
+    int compressedImageTargetHeight() const;
+
+    /**
+     * Returns true when compressed-image resize mode is enabled.
+     */
+    bool resizeCompressedImage() const;
+
+    /**
+     * Returns true when the static resize configuration is internally consistent.
+     */
+    bool compressedResizeConfigurationValid() const;
+
+    /**
+     * Returns the configuration error captured while validating resize mode.
+     */
+    const std::string& compressedResizeConfigurationError() const;
+
 public:
     /** Binning factor to get downsampled images. It refers here to any camera
      * setting which combines rectangular neighborhoods of pixels into larger
@@ -411,12 +436,12 @@ protected:
     bool publish_raw_image_;
 
     /**
-     * Enable publication on ~/image_raw/compressed.
+     * Enable publication on ~/image_compressed.
      */
     bool publish_compressed_image_;
 
     /**
-     * Compression format used for ~/image_raw/compressed.
+     * Compression format used for ~/image_compressed.
      */
     std::string compressed_image_format_;
 
@@ -429,6 +454,26 @@ protected:
      * PNG compression level used when compressed_image_format_ is png.
      */
     int compressed_image_png_level_;
+
+    /**
+     * Optional resized-compressed output width in pixels. Zero disables resize mode.
+     */
+    int compressed_image_target_width_;
+
+    /**
+     * Optional resized-compressed output height in pixels. Zero disables resize mode.
+     */
+    int compressed_image_target_height_;
+
+    /**
+     * Captures whether the static resized-compressed configuration is valid.
+     */
+    bool compressed_resize_configuration_valid_;
+
+    /**
+     * Stores the resize validation error message for startup diagnostics.
+     */
+    std::string compressed_resize_configuration_error_;
 };
 
 }  // namespace pylon_ros2_camera

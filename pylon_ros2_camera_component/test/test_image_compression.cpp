@@ -118,6 +118,44 @@ TEST(ImageCompression, CompressesLargeColorImageLoadedFromDiskToJpeg)
   EXPECT_EQ(decoded.rows, kHeight);
 }
 
+TEST(ImageCompression, CompressesAndResizesLargeColorImageLoadedFromDiskToJpeg)
+{
+  constexpr int kSourceWidth = 4096;
+  constexpr int kSourceHeight = 3000;
+  constexpr int kTargetWidth = 1536;
+  constexpr int kTargetHeight = 1125;
+  const ScopedTempFile temp_file(makeTempPath("_resized_color.png"));
+
+  const cv::Mat generated = makeLargeColorPattern(kSourceWidth, kSourceHeight);
+  ASSERT_TRUE(cv::imwrite(temp_file.path(), generated));
+
+  const cv::Mat image_from_disk = cv::imread(temp_file.path(), cv::IMREAD_COLOR);
+  ASSERT_FALSE(image_from_disk.empty());
+  ASSERT_EQ(image_from_disk.cols, kSourceWidth);
+  ASSERT_EQ(image_from_disk.rows, kSourceHeight);
+
+  const auto image_msg = cv_bridge::CvImage(std_msgs::msg::Header(),
+                                            sensor_msgs::image_encodings::BGR8,
+                                            image_from_disk).toImageMsg();
+
+  ImageCompressionOptions options;
+  options.format = "jpeg";
+  options.jpeg_quality = 80;
+  options.target_width = kTargetWidth;
+  options.target_height = kTargetHeight;
+
+  sensor_msgs::msg::CompressedImage compressed_msg;
+  std::string error_message;
+  ASSERT_TRUE(compressImageMessage(*image_msg, options, compressed_msg, error_message)) << error_message;
+  EXPECT_EQ(compressed_msg.format, "bgr8; jpeg compressed bgr8");
+  EXPECT_LT(compressed_msg.data.size(), image_msg->data.size());
+
+  const cv::Mat decoded = cv::imdecode(compressed_msg.data, cv::IMREAD_COLOR);
+  ASSERT_FALSE(decoded.empty());
+  EXPECT_EQ(decoded.cols, kTargetWidth);
+  EXPECT_EQ(decoded.rows, kTargetHeight);
+}
+
 TEST(ImageCompression, CompressesLargeMono16ImageLoadedFromDiskToPng)
 {
   constexpr int kWidth = 4096;
@@ -152,6 +190,45 @@ TEST(ImageCompression, CompressesLargeMono16ImageLoadedFromDiskToPng)
   EXPECT_EQ(decoded.type(), CV_16UC1);
   EXPECT_EQ(decoded.cols, kWidth);
   EXPECT_EQ(decoded.rows, kHeight);
+}
+
+TEST(ImageCompression, RejectsResizeWhenOnlyOneTargetDimensionProvided)
+{
+  ImageCompressionOptions options;
+  options.target_width = 1024;
+
+  std::string error_message;
+  EXPECT_FALSE(validateResizeTarget(options, error_message));
+  EXPECT_NE(error_message.find("both target_width and target_height"), std::string::npos);
+}
+
+TEST(ImageCompression, RejectsResizeTargetLargerThanSource)
+{
+  ImageCompressionOptions options;
+  options.target_width = 4097;
+  options.target_height = 3000;
+
+  std::string error_message;
+  EXPECT_FALSE(validateResizeTargetAgainstSource(options, 4096, 3000, error_message));
+  EXPECT_NE(error_message.find("smaller than or equal"), std::string::npos);
+}
+
+TEST(ImageCompression, RejectsResizeAspectRatioMismatch)
+{
+  ImageCompressionOptions options;
+  options.target_width = 2048;
+  options.target_height = 1200;
+
+  std::string error_message;
+  EXPECT_FALSE(validateResizeTargetAgainstSource(options, 4096, 3000, error_message));
+  EXPECT_NE(error_message.find("preserve the source aspect ratio"), std::string::npos);
+}
+
+TEST(ImageCompression, SelectsLargestEqualHardwareBinningCandidate)
+{
+  EXPECT_EQ(selectPreferredEqualBinningFactor(4096, 3000, 1536, 1125), 2u);
+  EXPECT_EQ(selectPreferredEqualBinningFactor(4096, 3000, 2048, 1500), 2u);
+  EXPECT_EQ(selectPreferredEqualBinningFactor(4096, 3000, 4096, 3000), 1u);
 }
 
 }  // namespace pylon_ros2_camera

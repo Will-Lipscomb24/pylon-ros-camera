@@ -131,6 +131,15 @@ bool PylonROS2CameraNode::init()
   // These parameters furthermore contain the intrinsic calibration matrices,
   // in case they are provided
   this->pylon_camera_parameter_set_.readFromRosParameterServer(*this);
+
+  if (!this->pylon_camera_parameter_set_.compressedResizeConfigurationValid())
+  {
+    RCLCPP_ERROR_STREAM(LOGGER,
+                        "Invalid resized-compressed transport configuration: "
+                        << this->pylon_camera_parameter_set_.compressedResizeConfigurationError());
+    rclcpp::shutdown();
+    return false;
+  }
   
   // creating the target PylonCamera-Object with the specified
   // device_user_id, registering the Software-Trigger-Mode, starting the
@@ -189,8 +198,11 @@ void PylonROS2CameraNode::initPublishers()
     msg_name = msg_prefix + "image_compressed";
     this->img_raw_compressed_pub_ = this->create_publisher<sensor_msgs::msg::CompressedImage>(msg_name, rclcpp::SensorDataQoS());
 
-    msg_name = msg_prefix + "camera_info";
-    this->camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(msg_name, rclcpp::SensorDataQoS());
+    if (!this->pylon_camera_parameter_set_.resizeCompressedImage())
+    {
+      msg_name = msg_prefix + "camera_info";
+      this->camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(msg_name, rclcpp::SensorDataQoS());
+    }
   }
 
   // blaze related topics
@@ -757,10 +769,27 @@ bool PylonROS2CameraNode::startGrabbing()
   this->setupInitialCameraInfo(initial_cam_info);
   this->camera_info_manager_->setCameraInfo(initial_cam_info);
 
+  if (!this->pylon_camera_->isBlaze() &&
+      this->pylon_camera_parameter_set_.resizeCompressedImage() &&
+      !this->configureCompressedResizeTransport())
+  {
+    RCLCPP_ERROR(LOGGER, "Failed to configure resized-compressed transport. Shutting down now.");
+    rclcpp::shutdown();
+    return false;
+  }
+
   if (!this->pylon_camera_->isBlaze())
   {
-    if (this->pylon_camera_parameter_set_.cameraInfoURL().empty() || 
-        !this->camera_info_manager_->validateURL(this->pylon_camera_parameter_set_.cameraInfoURL()))
+    if (this->compressedResizeTransportActive())
+    {
+      if (!this->pylon_camera_parameter_set_.cameraInfoURL().empty())
+      {
+        RCLCPP_WARN(LOGGER,
+                    "Ignoring camera_info_url because resized-compressed transport does not publish CameraInfo.");
+      }
+    }
+    else if (this->pylon_camera_parameter_set_.cameraInfoURL().empty() || 
+             !this->camera_info_manager_->validateURL(this->pylon_camera_parameter_set_.cameraInfoURL()))
     { 
       RCLCPP_INFO_STREAM(LOGGER, "CameraInfoURL needed for rectification! ROS2-Param: "
           << "'" << this->get_namespace() << "/camera_info_url' = '"
@@ -799,7 +828,9 @@ bool PylonROS2CameraNode::startGrabbing()
         std::bind(&PylonROS2CameraNode::handleGrabBlazeDataActionGoalAccepted, this, _1));
   }
 
-  if (!this->pylon_camera_->isBlaze() && this->pylon_camera_parameter_set_.binning_x_given_)
+  if (!this->pylon_camera_->isBlaze() &&
+      !this->compressedResizeTransportActive() &&
+      this->pylon_camera_parameter_set_.binning_x_given_)
   {   
     std::size_t reached_binning_x;
     this->setBinningX(this->pylon_camera_parameter_set_.binning_x_, reached_binning_x);
@@ -812,7 +843,9 @@ bool PylonROS2CameraNode::startGrabbing()
     }
   }
 
-  if (!this->pylon_camera_->isBlaze() && this->pylon_camera_parameter_set_.binning_y_given_)
+  if (!this->pylon_camera_->isBlaze() &&
+      !this->compressedResizeTransportActive() &&
+      this->pylon_camera_parameter_set_.binning_y_given_)
   {   
     std::size_t reached_binning_y;
     this->setBinningY(this->pylon_camera_parameter_set_.binning_y_, reached_binning_y);
@@ -899,7 +932,7 @@ bool PylonROS2CameraNode::startGrabbing()
 
   if (!this->pylon_camera_->isBlaze() && this->pylon_camera_parameter_set_.publishCompressedImage())
   {
-    RCLCPP_INFO_STREAM(LOGGER, "Compressed image publishing enabled on ~/image_raw/compressed"
+    RCLCPP_INFO_STREAM(LOGGER, "Compressed image publishing enabled on ~/image_compressed"
       << " using format '" << this->pylon_camera_parameter_set_.compressedImageFormat() << "'"
       << " (publish_raw_image=" << (this->pylon_camera_parameter_set_.publishRawImage() ? "true" : "false") << ")");
   }
@@ -977,7 +1010,8 @@ void PylonROS2CameraNode::spin()
       }
 
       sensor_msgs::msg::CameraInfo cam_info;
-      const bool needs_camera_info = has_raw_subscribers || has_compressed_subscribers;
+      const bool needs_camera_info = has_raw_subscribers ||
+                                     (has_compressed_subscribers && !this->compressedResizeTransportActive());
       if (needs_camera_info)
       {
         // get actual cam_info-object in every frame, because it might have
@@ -1000,6 +1034,11 @@ void PylonROS2CameraNode::spin()
         compression_options.format = this->pylon_camera_parameter_set_.compressedImageFormat();
         compression_options.jpeg_quality = this->pylon_camera_parameter_set_.compressedImageJpegQuality();
         compression_options.png_level = this->pylon_camera_parameter_set_.compressedImagePngLevel();
+        if (this->compressedResizeTransportActive())
+        {
+          compression_options.target_width = this->pylon_camera_parameter_set_.compressedImageTargetWidth();
+          compression_options.target_height = this->pylon_camera_parameter_set_.compressedImageTargetHeight();
+        }
 
         std::string error_message;
         if (!compressImageMessage(this->img_raw_msg_, compression_options, compressed_msg, error_message))
@@ -1007,13 +1046,15 @@ void PylonROS2CameraNode::spin()
           RCLCPP_ERROR_THROTTLE(LOGGER,
                                 *this->get_clock(),
                                 5000,
-                                "Failed to publish ~/image_raw/compressed: %s",
+                                "Failed to publish ~/image_compressed: %s",
                                 error_message.c_str());
         }
         else
         {
           this->img_raw_compressed_pub_->publish(compressed_msg);
-          if (!has_raw_subscribers && this->camera_info_pub_)
+          if (!this->compressedResizeTransportActive() &&
+              !has_raw_subscribers &&
+              this->camera_info_pub_)
           {
             this->camera_info_pub_->publish(cam_info);
           }
@@ -2255,7 +2296,11 @@ std::string PylonROS2CameraNode::gammaEnable(const int& enable)
 
 uint32_t PylonROS2CameraNode::getNumSubscribersRectImagePub() const
 {
-  return this->camera_info_manager_->isCalibrated() ? this->img_rect_pub_->getNumSubscribers() : 0;
+  return (!this->compressedResizeTransportActive() &&
+          this->camera_info_manager_->isCalibrated() &&
+          this->img_rect_pub_)
+             ? this->img_rect_pub_->getNumSubscribers()
+             : 0;
 }
 
 void PylonROS2CameraNode::getMaxNumBufferCallback(const std::shared_ptr<GetIntegerSrv::Request> request,
@@ -2699,6 +2744,15 @@ void PylonROS2CameraNode::getChunkExposureTimeCallback(const std::shared_ptr<Get
 void PylonROS2CameraNode::setBinningCallback(const std::shared_ptr<SetBinningSrv::Request> request,
                                              std::shared_ptr<SetBinningSrv::Response> response)
 {
+  if (this->compressedResizeTransportActive())
+  {
+    response->success = false;
+    response->reached_binning_x = static_cast<uint32_t>(this->pylon_camera_->currentBinningX());
+    response->reached_binning_y = static_cast<uint32_t>(this->pylon_camera_->currentBinningY());
+    RCLCPP_ERROR(LOGGER, "Rejecting ~/set_binning because resized-compressed transport requires fixed geometry.");
+    return;
+  }
+
   std::size_t reached_binning_x, reached_binning_y;
   const bool success_x = this->setBinningX(request->target_binning_x,
                                      reached_binning_x);
@@ -2761,6 +2815,14 @@ void PylonROS2CameraNode::setGammaCallback(const std::shared_ptr<SetGammaSrv::Re
 void PylonROS2CameraNode::setROICallback(const std::shared_ptr<SetROISrv::Request> request,
                                          std::shared_ptr<SetROISrv::Response> response)
 {
+  if (this->compressedResizeTransportActive())
+  {
+    response->success = false;
+    response->reached_roi = this->pylon_camera_->currentROI();
+    RCLCPP_ERROR(LOGGER, "Rejecting ~/set_roi because resized-compressed transport requires fixed geometry.");
+    return;
+  }
+
   response->success = this->setROI(request->target_roi, response->reached_roi);
 }
 
@@ -4750,6 +4812,127 @@ void PylonROS2CameraNode::setupInitialCameraInfo(sensor_msgs::msg::CameraInfo& c
   // zeroed out. In particular, clients may assume that K[0] == 0.0
   // indicates an uncalibrated camera.
   cam_info_msg.header = header;
+}
+
+bool PylonROS2CameraNode::configureCompressedResizeTransport()
+{
+  this->compressed_resize_transport_state_ = CompressedResizeTransportState{};
+
+  if (!this->pylon_camera_parameter_set_.resizeCompressedImage())
+  {
+    return true;
+  }
+
+  ImageCompressionOptions compression_options;
+  compression_options.target_width = this->pylon_camera_parameter_set_.compressedImageTargetWidth();
+  compression_options.target_height = this->pylon_camera_parameter_set_.compressedImageTargetHeight();
+
+  std::string error_message;
+  if (!validateResizeTargetAgainstSource(compression_options,
+                                         this->img_raw_msg_.width,
+                                         this->img_raw_msg_.height,
+                                         error_message))
+  {
+    RCLCPP_ERROR_STREAM(LOGGER, "Invalid resized-compressed transport geometry: " << error_message);
+    return false;
+  }
+
+  const std::size_t source_width = this->img_raw_msg_.width;
+  const std::size_t source_height = this->img_raw_msg_.height;
+  const std::size_t target_width = static_cast<std::size_t>(compression_options.target_width);
+  const std::size_t target_height = static_cast<std::size_t>(compression_options.target_height);
+  const std::size_t preferred_binning = selectPreferredEqualBinningFactor(source_width,
+                                                                          source_height,
+                                                                          target_width,
+                                                                          target_height);
+
+  bool configured = false;
+  for (std::size_t candidate = preferred_binning; candidate >= 1; --candidate)
+  {
+    std::size_t reached_binning_x = 1;
+    std::size_t reached_binning_y = 1;
+    const bool success_x = this->setBinningX(candidate, reached_binning_x);
+    const bool success_y = this->setBinningY(candidate, reached_binning_y);
+    const std::size_t current_binning_x = this->pylon_camera_->currentBinningX();
+    const std::size_t current_binning_y = this->pylon_camera_->currentBinningY();
+
+    if (success_x &&
+        success_y &&
+        current_binning_x == current_binning_y &&
+        this->pylon_camera_->imageCols() >= target_width &&
+        this->pylon_camera_->imageRows() >= target_height)
+    {
+      configured = true;
+      break;
+    }
+
+    if (candidate == 1)
+    {
+      break;
+    }
+  }
+
+  if (!configured)
+  {
+    RCLCPP_ERROR(LOGGER, "Unable to configure a fixed geometry for resized-compressed transport.");
+    return false;
+  }
+
+  this->compressed_resize_transport_state_.active = true;
+  this->compressed_resize_transport_state_.source_width = source_width;
+  this->compressed_resize_transport_state_.source_height = source_height;
+  this->compressed_resize_transport_state_.hardware_width = this->pylon_camera_->imageCols();
+  this->compressed_resize_transport_state_.hardware_height = this->pylon_camera_->imageRows();
+  this->compressed_resize_transport_state_.output_width = target_width;
+  this->compressed_resize_transport_state_.output_height = target_height;
+  this->compressed_resize_transport_state_.hardware_binning_x = this->pylon_camera_->currentBinningX();
+  this->compressed_resize_transport_state_.hardware_binning_y = this->pylon_camera_->currentBinningY();
+  this->compressed_resize_transport_state_.scale_x =
+      static_cast<double>(target_width) / static_cast<double>(source_width);
+  this->compressed_resize_transport_state_.scale_y =
+      static_cast<double>(target_height) / static_cast<double>(source_height);
+  this->compressed_resize_transport_state_.needs_software_resize =
+      this->compressed_resize_transport_state_.hardware_width != target_width ||
+      this->compressed_resize_transport_state_.hardware_height != target_height;
+
+  this->logCompressedResizeTransport();
+  return true;
+}
+
+bool PylonROS2CameraNode::compressedResizeTransportActive() const
+{
+  return this->compressed_resize_transport_state_.active;
+}
+
+void PylonROS2CameraNode::logCompressedResizeTransport() const
+{
+  if (!this->compressedResizeTransportActive())
+  {
+    return;
+  }
+
+  RCLCPP_INFO_STREAM(LOGGER,
+                     "Resized-compressed transport active on ~/image_compressed"
+                         << " source=" << this->compressed_resize_transport_state_.source_width
+                         << "x" << this->compressed_resize_transport_state_.source_height
+                         << " hardware=" << this->compressed_resize_transport_state_.hardware_width
+                         << "x" << this->compressed_resize_transport_state_.hardware_height
+                         << " output=" << this->compressed_resize_transport_state_.output_width
+                         << "x" << this->compressed_resize_transport_state_.output_height
+                         << " hardware_binning=["
+                         << this->compressed_resize_transport_state_.hardware_binning_x
+                         << ", " << this->compressed_resize_transport_state_.hardware_binning_y
+                         << "] software_resize="
+                         << (this->compressed_resize_transport_state_.needs_software_resize ? "true" : "false"));
+  RCLCPP_INFO_STREAM(LOGGER,
+                     "Resized-compressed transport scale factors: scale_x="
+                         << this->compressed_resize_transport_state_.scale_x
+                         << ", scale_y=" << this->compressed_resize_transport_state_.scale_y);
+  RCLCPP_INFO_STREAM(LOGGER,
+                     "To adapt a calibration offline, multiply fx and cx by "
+                         << this->compressed_resize_transport_state_.scale_x
+                         << " and fy and cy by "
+                         << this->compressed_resize_transport_state_.scale_y);
 }
 
 void PylonROS2CameraNode::setupRectification()

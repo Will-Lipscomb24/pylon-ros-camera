@@ -86,7 +86,11 @@ PylonROS2CameraParameter::PylonROS2CameraParameter() :
     publish_compressed_image_(false),
     compressed_image_format_("jpeg"),
     compressed_image_jpeg_quality_(80),
-    compressed_image_png_level_(3)
+    compressed_image_png_level_(3),
+    compressed_image_target_width_(0),
+    compressed_image_target_height_(0),
+    compressed_resize_configuration_valid_(true),
+    compressed_resize_configuration_error_("")
 {
     // information logging severity mode
     //rcutils_ret_t __attribute__((unused)) res = rcutils_logging_set_logger_level(LOGGER.get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
@@ -279,6 +283,26 @@ void PylonROS2CameraParameter::readFromRosParameterServer(rclcpp::Node& nh)
     }
 
     nh.get_parameter("compressed_image_png_level", this->compressed_image_png_level_);
+
+    // compressed image resize target width
+    RCLCPP_DEBUG(LOGGER, "---> compressed_image_target_width");
+
+    if (!nh.has_parameter("compressed_image_target_width"))
+    {
+        nh.declare_parameter<int>("compressed_image_target_width", 0);
+    }
+
+    nh.get_parameter("compressed_image_target_width", this->compressed_image_target_width_);
+
+    // compressed image resize target height
+    RCLCPP_DEBUG(LOGGER, "---> compressed_image_target_height");
+
+    if (!nh.has_parameter("compressed_image_target_height"))
+    {
+        nh.declare_parameter<int>("compressed_image_target_height", 0);
+    }
+
+    nh.get_parameter("compressed_image_target_height", this->compressed_image_target_height_);
 
     // ##########################
     //  image intensity settings
@@ -607,6 +631,9 @@ void PylonROS2CameraParameter::setDeviceUserId(rclcpp::Node& nh, const std::stri
 
 void PylonROS2CameraParameter::validateParameterSet(rclcpp::Node& nh)
 {
+    this->compressed_resize_configuration_valid_ = true;
+    this->compressed_resize_configuration_error_.clear();
+
     if (!this->device_user_id_.empty())
     {
         RCLCPP_INFO_STREAM(LOGGER, "Trying to connect the camera device with the following device user id: " << this->device_user_id_.c_str());
@@ -659,6 +686,61 @@ void PylonROS2CameraParameter::validateParameterSet(rclcpp::Node& nh)
                                 << " - is out of valid range [0, 9]. Will reset it to 3.");
         this->compressed_image_png_level_ = 3;
         nh.set_parameter(rclcpp::Parameter("compressed_image_png_level", this->compressed_image_png_level_));
+    }
+
+    if (this->compressed_image_target_width_ < 0)
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ = "compressed_image_target_width must be greater than or equal to zero";
+    }
+
+    if (this->compressed_resize_configuration_valid_ && this->compressed_image_target_height_ < 0)
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ = "compressed_image_target_height must be greater than or equal to zero";
+    }
+
+    const bool resize_requested = this->compressed_image_target_width_ > 0 || this->compressed_image_target_height_ > 0;
+    if (this->compressed_resize_configuration_valid_ &&
+        resize_requested &&
+        (this->compressed_image_target_width_ == 0 || this->compressed_image_target_height_ == 0))
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ =
+            "compressed image resize requires both compressed_image_target_width and compressed_image_target_height";
+    }
+
+    if (this->compressed_resize_configuration_valid_ &&
+        resize_requested &&
+        !this->publish_compressed_image_)
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ =
+            "compressed image resize mode requires publish_compressed_image=true";
+    }
+
+    if (this->compressed_resize_configuration_valid_ &&
+        resize_requested &&
+        this->publish_raw_image_)
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ =
+            "compressed image resize mode requires publish_raw_image=false";
+    }
+
+    if (this->compressed_resize_configuration_valid_ &&
+        resize_requested &&
+        ((this->binning_x_given_ && this->binning_x_ > 1) ||
+         (this->binning_y_given_ && this->binning_y_ > 1)))
+    {
+        this->compressed_resize_configuration_valid_ = false;
+        this->compressed_resize_configuration_error_ =
+            "compressed image resize mode owns binning; remove startup binning_x/binning_y overrides";
+    }
+
+    if (!this->compressed_resize_configuration_valid_)
+    {
+        RCLCPP_ERROR_STREAM(LOGGER, this->compressed_resize_configuration_error_);
     }
 
     if (!this->publish_raw_image_ && !this->publish_compressed_image_)
@@ -788,6 +870,31 @@ int PylonROS2CameraParameter::compressedImageJpegQuality() const
 int PylonROS2CameraParameter::compressedImagePngLevel() const
 {
     return this->compressed_image_png_level_;
+}
+
+int PylonROS2CameraParameter::compressedImageTargetWidth() const
+{
+    return this->compressed_image_target_width_;
+}
+
+int PylonROS2CameraParameter::compressedImageTargetHeight() const
+{
+    return this->compressed_image_target_height_;
+}
+
+bool PylonROS2CameraParameter::resizeCompressedImage() const
+{
+    return this->compressed_image_target_width_ > 0 && this->compressed_image_target_height_ > 0;
+}
+
+bool PylonROS2CameraParameter::compressedResizeConfigurationValid() const
+{
+    return this->compressed_resize_configuration_valid_;
+}
+
+const std::string& PylonROS2CameraParameter::compressedResizeConfigurationError() const
+{
+    return this->compressed_resize_configuration_error_;
 }
 
 void PylonROS2CameraParameter::setCameraInfoURL(rclcpp::Node& nh, const std::string& camera_info_url)

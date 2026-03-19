@@ -152,13 +152,16 @@ USB cameras must be disconnected and then reconnected after setting a new device
   Enable publication on `~/image_raw`. Leave this enabled for the current behavior, or disable it if the deployment should only expose the compressed stream.
 
 - **publish_compressed_image (not for the blaze)**
-  Enable publication on `~/image_raw/compressed` as `sensor_msgs/msg/CompressedImage`. If raw publication is disabled or there are no raw subscribers, the node also publishes `~/camera_info` directly so compressed consumers still receive calibration.
+  Enable publication on `~/image_compressed` as `sensor_msgs/msg/CompressedImage`.
 
 - **compressed_image_format (not for the blaze)**
-  Compression codec used for `~/image_raw/compressed`. Supported values are `jpeg`, `jpg` and `png`. The default is `jpeg`.
+  Compression codec used for `~/image_compressed`. Supported values are `jpeg`, `jpg` and `png`. The default is `jpeg`.
 
 - **compressed_image_jpeg_quality & compressed_image_png_level (not for the blaze)**
   JPEG quality in `[1, 100]` and PNG compression level in `[0, 9]`.
+
+- **compressed_image_target_width & compressed_image_target_height (not for the blaze)**
+  Optional resized-compressed output geometry for `~/image_compressed`. Set both to `0` to keep the current full-resolution compressed stream. Set both to matching non-zero values to enable resized-compressed transport. This mode requires `publish_raw_image=false`, does not publish `~/camera_info`, rejects runtime ROI/binning changes, and logs the source-to-output scale factors once at startup.
 
 - **binning_x & binning_y (not for the blaze)**  
   Binning factor to get downsampled images. It refers here to any camera setting which combines rectangular neighborhoods of pixels into larger "super-pixels." It reduces the resolution of the output image to (width / binning_x) x (height / binning_y). The default values binning_x = binning_y = 0 are considered the same as binning_x = binning_y = 1 (no subsampling).
@@ -242,20 +245,44 @@ The following settings do **NOT** have to be set. Each camera has default values
 
 ## Compressed Topic Patch
 
-The following changes were added to publish a network-facing compressed stream directly from the camera node:
+The driver can publish a network-facing compressed stream directly from the camera node on `~/image_compressed` as `sensor_msgs/msg/CompressedImage`.
 
-- Added `~/image_raw/compressed` as a `sensor_msgs/msg/CompressedImage` topic with `jpeg` and `png` support.
-- Added `publish_raw_image` so the node can run in compressed-only mode.
-- Added direct `~/camera_info` publication whenever compressed images are being published without a simultaneous raw image transport publish.
-- Added a dedicated compression helper plus tests that exercise 4096x3000 images written to disk before compression.
+There are now two compressed-stream modes:
 
-Example configuration:
+- **Compressed-only mode**: keep the original image geometry, publish `~/image_compressed`, and still publish `~/camera_info` when raw publication is disabled.
+- **Resized-compressed mode**: publish a resized + compressed `~/image_compressed` stream, do **not** publish `~/camera_info`, and log the scale factors once at startup so downstream consumers can rescale their own calibration offline.
+
+Resized-compressed mode has the following rules:
+
+- set both `compressed_image_target_width` and `compressed_image_target_height`
+- keep `publish_raw_image: false`
+- keep `publish_compressed_image: true`
+- target size must be less than or equal to the source size
+- target aspect ratio must match the source aspect ratio
+- ROI-based transport resizing is not used
+- the driver prefers equal X/Y hardware binning first and uses one final software downscale only if needed
+- runtime `~/set_binning` and `~/set_roi` requests are rejected while this mode is active
+
+Example compressed-only configuration:
 
 ```yaml
 publish_raw_image: false
 publish_compressed_image: true
 compressed_image_format: 'jpeg'
 compressed_image_jpeg_quality: 80
+compressed_image_target_width: 0
+compressed_image_target_height: 0
+```
+
+Example resized-compressed configuration:
+
+```yaml
+publish_raw_image: false
+publish_compressed_image: true
+compressed_image_format: 'jpeg'
+compressed_image_jpeg_quality: 80
+compressed_image_target_width: 1536
+compressed_image_target_height: 1125
 ```
 
 These options are set in the camera wrapper YAML under the node's `ros__parameters` block. By default, the launch file loads `pylon_ros2_camera_wrapper/config/cam_config_feb_11.yaml`, and the compression settings live there under:
@@ -269,16 +296,19 @@ These options are set in the camera wrapper YAML under the node's `ros__paramete
       compressed_image_format: 'jpeg'
       compressed_image_jpeg_quality: 80
       compressed_image_png_level: 3
+      compressed_image_target_width: 0
+      compressed_image_target_height: 0
 ```
 
 The file `pylon_ros2_camera_wrapper/config/default.yaml` also contains the same keys as a commented template. If you launch with a custom `config_file`, set the same parameters in that file instead. If `camera_id` or `node_name` changes at launch time, update the YAML nesting accordingly.
 
-With the default launch arguments (`camera_id:=basler_cam`, `node_name:=pylon_ros2_camera_node`), subscribers should use:
+With the default launch arguments (`camera_id:=basler_cam`, `node_name:=pylon_ros2_camera_node`), compressed subscribers should use:
 
-- `/basler_cam/pylon_ros2_camera_node/image_raw/compressed` [`sensor_msgs/msg/CompressedImage`]
-- `/basler_cam/pylon_ros2_camera_node/camera_info` [`sensor_msgs/msg/CameraInfo`]
+- `/basler_cam/pylon_ros2_camera_node/image_compressed` [`sensor_msgs/msg/CompressedImage`]
 
-Python subscriber example:
+`/basler_cam/pylon_ros2_camera_node/camera_info` is only published for the non-resized compressed mode. It is not published when `compressed_image_target_width` and `compressed_image_target_height` are both non-zero.
+
+Python subscriber example for the compressed stream:
 
 ```python
 import cv2
@@ -286,7 +316,7 @@ import numpy as np
 import rclpy
 
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, CompressedImage
+from sensor_msgs.msg import CompressedImage
 
 
 class CameraSubscriber(Node):
@@ -295,15 +325,8 @@ class CameraSubscriber(Node):
 
         self.image_sub = self.create_subscription(
             CompressedImage,
-            '/basler_cam/pylon_ros2_camera_node/image_raw/compressed',
+            '/basler_cam/pylon_ros2_camera_node/image_compressed',
             self.image_callback,
-            10,
-        )
-
-        self.camera_info_sub = self.create_subscription(
-            CameraInfo,
-            '/basler_cam/pylon_ros2_camera_node/camera_info',
-            self.camera_info_callback,
             10,
         )
 
@@ -314,9 +337,6 @@ class CameraSubscriber(Node):
             return
 
         self.get_logger().info(f'Received image with shape {image.shape}')
-
-    def camera_info_callback(self, msg: CameraInfo):
-        self.get_logger().info(f'Received camera matrix K={list(msg.k)}')
 
 
 def main():
@@ -329,14 +349,21 @@ def main():
 
 If `camera_id` or `node_name` is changed at launch time, update the topic paths accordingly.
 
-If you change binning or ROI, update the calibration matrices to match the new image geometry. For a full-resolution calibration with `(fx, fy, cx, cy)` and a cropped output defined by `(roi_x_offset, roi_y_offset, binning_x, binning_y)`:
+When resized-compressed mode is active, the node logs the geometry conversion once at startup:
 
-- `fx' = fx / binning_x`
-- `fy' = fy / binning_y`
-- `cx' = (cx - roi_x_offset) / binning_x`
-- `cy' = (cy - roi_y_offset) / binning_y`
+- source width and height
+- hardware-binned width and height
+- final output width and height
+- `scale_x = output_width / source_width`
+- `scale_y = output_height / source_height`
+- the selected hardware binning factors
 
-Apply the same substitutions to the projection matrix `P` (`P[0]`, `P[5]`, `P[2]`, `P[6]`). This patch republishes the current `CameraInfo`, but it does not synthesize a new calibration after ROI or binning changes.
+If you already have a calibration and want to adapt it outside the driver, multiply:
+
+- `fx` and `cx` by `scale_x`
+- `fy` and `cy` by `scale_y`
+
+No scaled `CameraInfo` is synthesized or published for the resized-compressed stream.
 
 - **enable_status_publisher**  
   Flag used to enable/disable the node status publisher.

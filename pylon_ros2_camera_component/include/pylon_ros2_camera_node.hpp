@@ -1591,6 +1591,22 @@ protected:
   float calcCurrentBrightness();
 
   /**
+   * @brief Applies the startup resized-compressed transport configuration.
+   * @return true if the configured output geometry is valid and active.
+   */
+  bool configureCompressedResizeTransport();
+
+  /**
+   * @brief Returns true when the startup resized-compressed transport is active.
+   */
+  bool compressedResizeTransportActive() const;
+
+  /**
+   * @brief Logs the active resized-compressed transport geometry.
+   */
+  void logCompressedResizeTransport() const;
+
+  /**
    * @brief Fills the ros CameraInfo-Object with the image dimensions
    */
   virtual void setupInitialCameraInfo(sensor_msgs::msg::CameraInfo& cam_info_msg);
@@ -1637,6 +1653,22 @@ protected:
    * @return true if in sleep mode
    */
   bool isSleeping();
+
+  struct CompressedResizeTransportState
+  {
+    bool active{false};
+    bool needs_software_resize{false};
+    std::size_t source_width{0};
+    std::size_t source_height{0};
+    std::size_t hardware_width{0};
+    std::size_t hardware_height{0};
+    std::size_t output_width{0};
+    std::size_t output_height{0};
+    std::size_t hardware_binning_x{1};
+    std::size_t hardware_binning_y{1};
+    double scale_x{1.0};
+    double scale_y{1.0};
+  };
 
 protected:
 
@@ -1814,6 +1846,8 @@ protected:
   // actions
   rclcpp_action::Server<GrabImagesAction>::SharedPtr grab_imgs_raw_as_;
   rclcpp_action::Server<GrabImagesAction>::SharedPtr grab_imgs_rect_as_;
+
+  CompressedResizeTransportState compressed_resize_transport_state_;
   // blaze related action
   rclcpp_action::Server<GrabBlazeDataAction>::SharedPtr grab_blaze_data_as_;
 
