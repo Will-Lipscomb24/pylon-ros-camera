@@ -59,8 +59,8 @@ def _launch_node(context: LaunchContext):
                     {
                         'gige/mtu_size': mtu_size,
                        # 'startup_user_set': startup_user_set,
-                        'enable_status_publisher': enable_status_publisher,
-                        'enable_current_params_publisher': enable_current_params_publisher
+                       'enable_status_publisher': enable_status_publisher,
+                       'enable_current_params_publisher': enable_current_params_publisher
                     }
                 ]
             ),
@@ -108,13 +108,13 @@ def generate_launch_description():
 
     declare_enable_status_publisher_cmd = DeclareLaunchArgument(
         'enable_status_publisher',
-        default_value='true',
+        default_value='false',
         description='Enable/Disable the status publishing.'
     )
 
     declare_enable_current_params_publisher_cmd = DeclareLaunchArgument(
         'enable_current_params_publisher',
-        default_value='true',
+        default_value='false',
         description='Enable/Disable the current parameter publishing.'
     )
 
