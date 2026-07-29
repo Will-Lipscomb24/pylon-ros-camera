@@ -1,0 +1,11 @@
+stream_compressor_node:
+  ros__parameters:
+    input_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
+    output_topic: "/basler_cam/pylon_ros2_camera_node/image_compressed_small"
+    target_width: 512               # output width in px, height follows source aspect
+    jpeg_quality: 50                # 1 is smallest/worst, 100 is largest/best
+    stream_rate_hz: 5.0             # cap stream rate independent of disk-save rate
+    reliability: "best_effort"      # best_effort is low latency, reliable retransmits
+    only_when_broadcasting: false   # true streams only while broker code matches
+    broker_topic: "/eowyn/external/broker_robotic_topic"
+    broadcast_code: 4
