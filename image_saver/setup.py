@@ -9,8 +9,14 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/image_saver.launch.py']),
-        ('share/' + package_name + '/config', ['config/image_saver_config.yaml']),
+        ('share/' + package_name + '/launch', [
+            'launch/image_saver.launch.py',
+            'launch/stream_compressor.launch.py',
+        ]),
+        ('share/' + package_name + '/config', [
+            'config/image_saver_config.yaml',
+            'config/stream_compressor_config.yaml',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -22,6 +28,7 @@ setup(
     entry_points={
         'console_scripts': [
             'image_saver_node = image_saver.image_saver_node:main',
+            'stream_compressor_node = image_saver.stream_compressor_node:main',
         ],
     },
 )

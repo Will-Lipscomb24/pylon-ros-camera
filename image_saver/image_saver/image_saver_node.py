@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import threading
 import rclpy
+import numpy as np
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Image, CompressedImage
@@ -46,7 +47,9 @@ class ImageSaverNode(Node):
         os.makedirs(self.save_dir, exist_ok=True)
         self.bridge = CvBridge()
         self.last_saved_seq = None   # used for duplicate detection
-        self.saved_count = 1
+        self.saved_count  = 1
+        self.folder_count = 0
+        self._create_folder_ifnotexists()
         self.capture_active = False
 
         # --- Subscriber ---
@@ -132,7 +135,7 @@ class ImageSaverNode(Node):
         # --- Build filename ---
         #ms = (file_ns % 1_000_000_000) // 1_000_000
         #timestamp_str = file_dt.strftime('%Y%m%d_%H%M%S') + f'_{ms:03d}ms'
-        filename = f'{self.image_prefix}_{self.saved_count}_{file_ns}.png'
+        filename = f'images_{self.folder_count}/{self.image_prefix}_{self.saved_count}_{file_ns}.png'
         filepath = os.path.join(self.save_dir, filename)
 
         # --- Convert and save ---
@@ -150,19 +153,22 @@ class ImageSaverNode(Node):
             self.get_logger().error(f'Failed to write: {filepath}')
             return
 
-        self.saved_count += 1
+        # self.saved_count += 1
 
-        log = (
-            f'[{self.saved_count}] Saved: {filename} | Camera stamp : {file_ns} [Sec_NanoSec]'
-        )
-        if self.timestamp_source == 'both':
-            log += f'\n  Wall clock   : {file_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]} UTC'
-        self.get_logger().info(log)
+        # log = (
+        #     f'[{self.saved_count}] Saved: {filename} | Camera stamp : {file_ns} [Sec_NanoSec]'
+        # )
+        # if self.timestamp_source == 'both':
+        #     log += f'\n  Wall clock   : {file_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]} UTC'
+        # self.get_logger().info(log)
 
     def broker_callback(self, msg: TheoCode):
         if int( msg.code ) == self.broadcast_code:
        	    self.capture_active = True
         else:
+            if self.capture_active:
+                self.folder_count += 1
+                self._create_folder_ifnotexists()
             self.capture_active = False
 
     # ------------------------------------------------------------------
@@ -173,6 +179,9 @@ class ImageSaverNode(Node):
         return dt, total_ns
 
     # ------------------------------------------------------------------
+
+    def _create_folder_ifnotexists( self ):
+        os.makedirs(os.path.join(self.save_dir, f"images_{self.folder_count}/"), exist_ok=True)
 
 # ----------------------------------------------------------------------
 def main(args=None):

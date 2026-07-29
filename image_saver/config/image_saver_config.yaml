@@ -1,10 +1,15 @@
 image_saver_node:
   ros__parameters:
     image_topic: "/basler_cam/pylon_ros2_camera_node/image_raw"
+    #image_topic: "/basler_cam/pylon_ros2_camera_node/image_compressed"
+    #is_compressed_image: false
+    is_compressed_image: false
     broker_topic: "/eowyn/external/broker_robotic_topic"
-    save_directory: "/mnt/usb"
-    save_rate_hz: 5.0
+    save_directory: "/home/jetson/tmp"
+    # save_rate_hz: 5.0
+    save_rate_hz: 2.0 # need to check on this 
     image_prefix: "frame"
     timestamp_source: "header"   # 'header', 'wall', or 'both'
     skip_duplicates: true
-    is_compressed_image: true
+    # is_compressed_image: true 
+

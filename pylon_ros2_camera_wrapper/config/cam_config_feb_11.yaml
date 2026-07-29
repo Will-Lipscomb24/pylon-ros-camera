@@ -23,14 +23,22 @@
 
       #  Broadcast compressed images instead of the raw transport on this
       #  deployment path.
-      publish_raw_image: false
-      publish_compressed_image: true
+      publish_raw_image: true # switch between these two for raw vs compressed
+      publish_compressed_image: false
+      resize_compressed_image: false
+      # publish_raw_image: false # switch between these two for raw vs compressed
+      # publish_compressed_image: true
+      # resize_compressed_image: true
+
       compressed_image_format: 'jpeg'
       compressed_image_jpeg_quality: 100 # between 1 and 100, 1 means worst quality, 100 means best quality
       compressed_image_png_level: 3 # between 0 and 9, 0 means no compression, 9 means maximum compression
-      compressed_image_target_width: 1024 # set both target dimensions to enable resized-compressed transport on ~/image_compressed
-      compressed_image_target_height: 750 # resize mode does not publish ~/camera_info and logs scale factors at startup
+      # compressed_image_target_width: 1024 # set both target dimensions to enable resized-compressed transport on ~/image_compressed
+      # compressed_image_target_height: 750 # resize mode does not publish ~/camera_info and logs scale factors at startup
       # node will do both if compressed_image_jpeg_quality and compressed_image_target_width and compressed_image_target_height are set
+      compressed_image_target_width: 0 # set both target dimensions to enable resized-compressed transport on ~/image_compressed
+      compressed_image_target_height: 0 # resize mode does not publish ~/camera_info and logs scale factors at startup
+
 
       #  Binning factor to get downsampled images. It refers here to any camera
       #  setting which combines rectangular neighborhoods of pixels into larger
@@ -60,12 +68,14 @@
       ##########################################################################
 
       #  The exposure time in microseconds to be set after opening the camera.
-      exposure: 30000.0
+      # exposure: 30000.0
+      exposure: 25000.0
 
       #  The target gain in percent of the maximal value the camera supports
       #  For USB cameras, the gain is in dB, for GigE cameras it is given in so
       #  called 'device specific units'.
-      gain: 0.0
+      # gain 0.0
+      gain: 5.0
 
       #  Gamma correction of pixel intensity.
       #  Adjusts the brightness of the pixel values output by the camera's sensor
